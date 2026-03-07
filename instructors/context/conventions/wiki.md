@@ -63,6 +63,7 @@ Docs:
   - `wiki/pyproject-toml.md` ↔ `pyproject.toml`
 - Vendor instructions that aren't good enough anywhere else (e.g., rewrite unclear official docs).
 - Provide fallback methods when one method may not work for all students.
+- **Placeholder section titles** must use the format `` `<placeholder>` placeholder `` to avoid collision with the concept section of the same name. Example: a wiki file may have both `### Username` (explaining what a username is) and `` ### `<username>` placeholder `` (defining the placeholder). Without the word "placeholder" in the title, the two sections would collide.
 
 ### 1.5. Standard wiki topics to include
 
