@@ -2,60 +2,120 @@
 
 ## Overview
 
-`agent.py` is a Python CLI that calls an LLM and returns structured JSON responses. It serves as the foundation for building an agentic system with tools and reasoning capabilities in later tasks.
+`agent.py` is a Python CLI that calls an LLM with tools to answer questions about the project. It implements an **agentic loop**: the agent asks the LLM a question, the LLM decides which tools to call, the agent executes tools, and the loop continues until the LLM provides a final answer.
 
-## Current Capabilities (Task 1)
+## Capabilities by Task
 
+### Task 1: Basic LLM Calling
 - ✅ Accept questions as CLI arguments
 - ✅ Call OpenRouter API (OpenAI-compatible)
 - ✅ Parse LLM responses
-- ✅ Return JSON with `answer` and (empty) `tool_calls`
-- ✅ 60-second timeout
-- ✅ Proper error handling and logging to stderr
+- ✅ Return JSON with `answer` and empty `tool_calls`
+
+### Task 2: Documentation Agent
+- ✅ Define `read_file` and `list_files` tools
+- ✅ Implement agentic loop (max 10 iterations)
+- ✅ Execute tools and feed results back to LLM
+- ✅ Return JSON with `answer`, `source`, and populated `tool_calls`
+- ✅ Path traversal protection for security
 
 ## LLM Provider
 
 **OpenRouter** (https://openrouter.ai)
 
-### Why OpenRouter?
+- Free tier: 50+ requests/day
+- OpenAI-compatible API
+- Model: `qwen/qwen-plus` (strong reasoning + tool calling)
 
-- Free tier: 50+ requests per day (no credit card)
-- OpenAI-compatible `/v1/chat/completions` API
-- Global access (works from Russia)
-- Multiple free models available
+## Tools
 
-### Model
+### read_file
 
-**`qwen/qwen-plus`** (OpenRouter endpoint for Qwen Plus)
+Read a file from the project repository.
 
-- Strong code understanding and reasoning
-- Available on free tier of OpenRouter
-- Good performance/reliability ratio
+**Parameters:**
+- `path` (string) — relative path from project root (e.g., `wiki/git.md`)
 
-## Architecture
+**Returns:**
+- File contents or error message
+
+**Security:**
+- Blocks directory traversal (`../`)
+- Only allows access within project root
+
+### list_files
+
+List files and directories at a given path.
+
+**Parameters:**
+- `path` (string) — directory path from project root (e.g., `wiki`)
+
+**Returns:**
+- Newline-separated list of entries
+
+**Security:**
+- Blocks directory traversal
+- Only lists within project root
+
+## Agentic Loop
+
+The agent runs a loop (max 10 iterations):
+
+1. Send question + tool definitions to LLM
+2. If LLM responds with tool calls:
+   - Execute each tool
+   - Add results to message history
+   - Loop back to step 1
+3. If LLM responds without tool calls:
+   - Return final answer with source reference
 
 ```
-User Input (CLI)
-    │
-    └─→ agent.py
-            │
-            ├─→ Load .env.agent.secret
-            │   ├─ LLM_API_KEY
-            │   ├─ LLM_API_BASE
-            │   └─ LLM_MODEL
-            │
-            ├─→ Parse CLI arguments
-            │
-            ├─→ Build API request
-            │   └─ system prompt
-            │   └─ user question
-            │
-            ├─→ Call OpenRouter API
-            │
-            ├─→ Parse response
-            │
-            └─→ Output JSON
-                └─ {answer, tool_calls}
+Question + Tools
+    ↓
+LLM Decision
+    ├─ Has tool calls? → Execute + Loop
+    └─ No tool calls? → Return answer
+```
+
+## System Prompt
+
+Guides the LLM to:
+- Use `list_files` to discover relevant files
+- Use `read_file` to find answers
+- Include source references (wiki file paths)
+- Be concise and accurate
+
+## Output Format
+
+```json
+{
+  "answer": "Answer text with source reference",
+  "source": "wiki/git-workflow.md#section-name",
+  "tool_calls": [
+    {
+      "tool": "list_files",
+      "args": {"path": "wiki"},
+      "result": "git.md\ngit-workflow.md\n..."
+    },
+    {
+      "tool": "read_file",
+      "args": {"path": "wiki/git-workflow.md"},
+      "result": "# Git Workflow\n...content..."
+    }
+  ]
+}
+```
+
+## Usage
+
+```bash
+# Basic LLM call (Task 1)
+uv run agent.py "What is REST?"
+# Output: {"answer": "...", "source": "unknown", "tool_calls": []}
+
+# Documentation search (Task 2)
+uv run agent.py "How do you resolve a merge conflict?"
+# Output: {"answer": "...", "source": "wiki/...", "tool_calls": [...]}
 ```
 
 ## Configuration
@@ -63,115 +123,25 @@ User Input (CLI)
 File: `.env.agent.secret` (git-ignored)
 
 ```bash
-LLM_API_KEY=sk-or-v1-...           # OpenRouter API key
+LLM_API_KEY=sk-or-v1-...
 LLM_API_BASE=https://openrouter.ai/api/v1
 LLM_MODEL=qwen/qwen-plus
 ```
 
-### How to Create
-
-```bash
-cp .env.agent.example .env.agent.secret
-# Edit with your OpenRouter API key
-```
-
-### Get an API Key
-
-1. Visit https://openrouter.ai
-2. Sign up (free, no credit card)
-3. Go to Settings → API Keys
-4. Create a new key
-5. Copy it to `.env.agent.secret`
-
-## Usage
-
-```bash
-# Installation (first time)
-uv sync
-
-# Run the agent
-uv run agent.py "What is REST?"
-
-# Expected output (stdout):
-# {"answer": "Representational State Transfer. It's an architectural style...", "tool_calls": []}
-```
-
-### Debug Output
-
-All debug/progress messages go to **stderr**, not stdout:
-
-```bash
-# Run with debug output visible:
-uv run agent.py "Your question" 2>&1
-
-# In your code, use:
-print("[DEBUG] Message here", file=sys.stderr)
-```
-
-## Input/Output Contract
-
-### Input
-
-- **CLI argument #1**: String question
-- **Timeout**: 60 seconds
-
-### Output (stdout, always valid JSON)
-
-```json
-{
-  "answer": "The answer to the question",
-  "tool_calls": []
-}
-```
-
-### Exit Codes
-
-- `0`: Success
-- `1`: Any error (missing config, API error, timeout, etc.)
-
-## Error Handling
-
-| Error | Handling |
-|-------|----------|
-| Missing `.env.agent.secret` | Print to stderr, exit 1 |
-| Missing env variables | Print to stderr, exit 1 |
-| API connection timeout | Print to stderr, exit 1 |
-| API HTTP error | Print response, exit 1 |
-| Invalid JSON response | Print to stderr, exit 1 |
-| No arguments | Print usage, exit 1 |
-
-## Future Tasks
-
-### Task 2: Add Tools
-
-- Define tools (read_file, list_dir, run_code, etc.)
-- Add `tool_calls` to output
-- Implement tool execution loop
-
-### Task 3: Build Agentic Loop
-
-- Implement reasoning loop
-- Handle tool results
-- Multi-step reasoning chains
-
-## Dependencies
-
-- `python-dotenv`: Load `.env` files
-- `requests`: HTTP API calls
-
-## Development Notes
-
-- All API calls use OpenAI-compatible format (`.../v1/chat/completions`)
-- System prompt is minimal (will expand in Task 2 with tool definitions)
-- Temperature set to 0.7 for balanced creativity/consistency
-- No tools defined yet (tool_calls always empty)
-
 ## Testing
 
-Run tests with:
-
 ```bash
-pytest tests/integration/test_task1_basic_llm_call.py -v
+# Task 1 tests
+uv run pytest tests/test_task1_basic_llm_call.py -v
+
+# Task 2 tests
+uv run pytest tests/test_task2_*.py -v
 ```
 
-See `tests/integration/test_task1_basic_llm_call.py` for details.
+## Files
+
+- `agent.py` — Agent CLI and agentic loop implementation
+- `.env.agent.secret` — LLM credentials (gitignored)
+- `plans/task-1.md` — Implementation plan for Task 1
+- `plans/task-2.md` — Implementation plan for Task 2
+- `AGENT.md` — This file
