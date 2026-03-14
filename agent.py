@@ -35,17 +35,15 @@ def load_config():
 
     load_dotenv(env_file)
 
-    api_key = os.getenv("LLM_API_KEY")
-    api_base = os.getenv("LLM_API_BASE")
-    model = os.getenv("LLM_MODEL")
+    api_key = os.getenv("GEMINI_API_KEY")
+    model = os.getenv("GEMINI_MODEL")
 
-    if not all([api_key, api_base, model]):
+    if not all([api_key, model]):
         print("ERROR: Missing LLM configuration in .env.agent.secret", file=sys.stderr)
         sys.exit(1)
 
     return {
         "api_key": api_key,
-        "api_base": api_base,
         "model": model,
     }
 
@@ -60,7 +58,7 @@ def validate_path(path: str) -> bool:
         # Check if requested path is within project root
         requested.relative_to(project_root)
         return True
-    except (ValueError, RuntimeError):
+    except ValueError, RuntimeError:
         return False
 
 
@@ -104,26 +102,22 @@ def list_files(path: str) -> str:
 
 def query_api(method: str, path: str, body: Optional[str] = None) -> str:
     """Query the backend API with authentication."""
-    
+
     # Get credentials and base URL from environment
     api_key = os.getenv("LMS_API_KEY")
     api_base = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
-    
+
     if not api_key:
-        return json.dumps({
-            "status_code": 500,
-            "body": "ERROR: LMS_API_KEY not set in environment"
-        })
-    
+        return json.dumps(
+            {"status_code": 500, "body": "ERROR: LMS_API_KEY not set in environment"}
+        )
+
     url = f"{api_base}{path}"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
     try:
         print(f"[DEBUG] API request: {method} {url}", file=sys.stderr)
-        
+
         if method.upper() == "GET":
             response = requests.get(url, headers=headers, timeout=10)
         elif method.upper() == "POST":
@@ -138,32 +132,31 @@ def query_api(method: str, path: str, body: Optional[str] = None) -> str:
             json_body = json.loads(body or "{}")
             response = requests.patch(url, headers=headers, json=json_body, timeout=10)
         else:
-            return json.dumps({
-                "status_code": 400,
-                "body": f"ERROR: Unsupported HTTP method: {method}"
-            })
-        
+            return json.dumps(
+                {
+                    "status_code": 400,
+                    "body": f"ERROR: Unsupported HTTP method: {method}",
+                }
+            )
+
         print(f"[DEBUG] API response: {response.status_code}", file=sys.stderr)
-        
-        return json.dumps({
-            "status_code": response.status_code,
-            "body": response.text[:2000]  # Limit response size
-        })
+
+        return json.dumps(
+            {
+                "status_code": response.status_code,
+                "body": response.text[:2000],  # Limit response size
+            }
+        )
     except requests.exceptions.Timeout:
-        return json.dumps({
-            "status_code": 408,
-            "body": "ERROR: API request timed out"
-        })
+        return json.dumps({"status_code": 408, "body": "ERROR: API request timed out"})
     except requests.exceptions.ConnectionError as e:
-        return json.dumps({
-            "status_code": 503,
-            "body": f"ERROR: Failed to connect to API: {str(e)}"
-        })
+        return json.dumps(
+            {"status_code": 503, "body": f"ERROR: Failed to connect to API: {str(e)}"}
+        )
     except Exception as e:
-        return json.dumps({
-            "status_code": 500,
-            "body": f"ERROR: API call failed: {str(e)}"
-        })
+        return json.dumps(
+            {"status_code": 500, "body": f"ERROR: API call failed: {str(e)}"}
+        )
 
 
 def get_tool_definitions():
@@ -179,12 +172,12 @@ def get_tool_definitions():
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Relative path from project root (e.g., wiki/git.md, README.md)"
+                            "description": "Relative path from project root (e.g., wiki/git.md, README.md)",
                         }
                     },
-                    "required": ["path"]
-                }
-            }
+                    "required": ["path"],
+                },
+            },
         },
         {
             "type": "function",
@@ -196,12 +189,12 @@ def get_tool_definitions():
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Directory path relative to project root (e.g., wiki, backend)"
+                            "description": "Directory path relative to project root (e.g., wiki, backend)",
                         }
                     },
-                    "required": ["path"]
-                }
-            }
+                    "required": ["path"],
+                },
+            },
         },
         {
             "type": "function",
@@ -213,21 +206,21 @@ def get_tool_definitions():
                     "properties": {
                         "method": {
                             "type": "string",
-                            "description": "HTTP method: GET, POST, PUT, DELETE, PATCH"
+                            "description": "HTTP method: GET, POST, PUT, DELETE, PATCH",
                         },
                         "path": {
                             "type": "string",
-                            "description": "API path (e.g., /items/, /analytics/completion-rate?lab=lab-1)"
+                            "description": "API path (e.g., /items/, /analytics/completion-rate?lab=lab-1)",
                         },
                         "body": {
                             "type": "string",
-                            "description": "JSON request body (optional, for POST/PUT/PATCH requests)"
-                        }
+                            "description": "JSON request body (optional, for POST/PUT/PATCH requests)",
+                        },
                     },
-                    "required": ["method", "path"]
-                }
-            }
-        }
+                    "required": ["method", "path"],
+                },
+            },
+        },
     ]
 
 
@@ -239,47 +232,119 @@ def execute_tool(tool_name: str, args: dict) -> str:
         return list_files(args.get("path", ""))
     elif tool_name == "query_api":
         return query_api(
-            args.get("method", "GET"),
-            args.get("path", "/"),
-            args.get("body")
+            args.get("method", "GET"), args.get("path", "/"), args.get("body")
         )
     else:
         return f"ERROR: Unknown tool: {tool_name}"
 
 
 def call_llm(messages: list, config: dict, tools: list) -> dict:
-    """Call the LLM with messages and tools, return parsed response."""
+    """Call Gemini LLM with messages and tools, return parsed response."""
 
-    url = f"{config['api_base']}/chat/completions"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config['model']}:generateContent"
+
     headers = {
-        "Authorization": f"Bearer {config['api_key']}",
         "Content-Type": "application/json",
     }
 
+    # Convert OpenAI format messages to Gemini format
+    gemini_messages = []
+    for msg in messages:
+        if msg["role"] == "system":
+            # Prepend system message to first user message
+            continue
+        gemini_messages.append(
+            {
+                "role": "user" if msg["role"] == "user" else "model",
+                "parts": [{"text": msg["content"]}],
+            }
+        )
+
+    # Add system prompt as first user message if exists
+    system_prompt = next(
+        (m["content"] for m in messages if m["role"] == "system"), None
+    )
+    if system_prompt and gemini_messages:
+        gemini_messages[0]["parts"][0]["text"] = (
+            system_prompt + "\n\n" + gemini_messages[0]["parts"][0]["text"]
+        )
+
+    # Convert tools to Gemini format
+    gemini_tools = []
+    for tool in tools:
+        if tool["type"] == "function":
+            func = tool["function"]
+            gemini_tools.append(
+                {
+                    "function_declarations": [
+                        {
+                            "name": func["name"],
+                            "description": func["description"],
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": func["parameters"]["properties"],
+                                "required": func["parameters"].get("required", []),
+                            },
+                        }
+                    ]
+                }
+            )
+
     payload = {
-        "model": config["model"],
-        "messages": messages,
-        "tools": tools,
-        "temperature": 0.7,
-        "tool_choice": "auto",
+        "contents": gemini_messages,
+        "tools": gemini_tools if gemini_tools else None,
+        "generationConfig": {
+            "temperature": 0.7,
+        },
     }
 
+    # Remove None values
+    if not payload["tools"]:
+        del payload["tools"]
+
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(
+            f"{url}?key={config['api_key']}", headers=headers, json=payload, timeout=60
+        )
         response.raise_for_status()
         data = response.json()
 
-        if "choices" not in data or len(data["choices"]) == 0:
-            print("ERROR: Invalid API response structure", file=sys.stderr)
+        if "candidates" not in data or len(data["candidates"]) == 0:
+            print("ERROR: Invalid Gemini response structure", file=sys.stderr)
             sys.exit(1)
 
-        choice = data["choices"][0]
-        message = choice["message"]
+        candidate = data["candidates"][0]
+        content = candidate.get("content", {})
+        parts = content.get("parts", [])
+
+        # Extract text and tool calls
+        text_content = ""
+        tool_calls = []
+
+        for part in parts:
+            if "text" in part:
+                text_content = part["text"]
+            elif "functionCall" in part:
+                func_call = part["functionCall"]
+                tool_calls.append(
+                    {
+                        "function": {
+                            "name": func_call["name"],
+                            "arguments": json.dumps(func_call.get("args", {})),
+                        }
+                    }
+                )
+
+        finish_reason = candidate.get("finishReason", "STOP")
 
         return {
-            "content": message.get("content", ""),
-            "tool_calls": message.get("tool_calls", []),
-            "stop_reason": choice.get("finish_reason", ""),
+            "content": text_content,
+            "tool_calls": tool_calls,
+            "stop_reason": "stop"
+            if finish_reason == "STOP"
+            else "tool_calls"
+            if tool_calls
+            else "stop",
         }
 
     except requests.exceptions.Timeout:
