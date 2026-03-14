@@ -6,7 +6,7 @@ Build a Python CLI agent (`agent.py`) that connects to an LLM and returns struct
 
 ## LLM Provider Selection
 
-**Chosen: OpenRouter** (https://openrouter.ai)
+**Chosen: OpenRouter** (<https://openrouter.ai>)
 
 ### Why OpenRouter?
 
@@ -69,7 +69,7 @@ Build a Python CLI agent (`agent.py`) that connects to an LLM and returns struct
 
 File: `.env.agent.secret`
 
-- `LLM_API_KEY`: OpenRouter API key (from https://openrouter.ai)
+- `LLM_API_KEY`: OpenRouter API key (from <https://openrouter.ai>)
 - `LLM_API_BASE`: `https://openrouter.ai/api/v1`
 - `LLM_MODEL`: `qwen/qwen-plus`
 
@@ -80,6 +80,7 @@ uv run agent.py "What does REST stand for?"
 ```
 
 **Output (stdout):**
+
 ```json
 {"answer": "Representational State Transfer...", "tool_calls": []}
 ```
