@@ -26,7 +26,12 @@ from dotenv import load_dotenv
 
 
 def load_config():
-    """Load LLM configuration from .env.agent.secret"""
+    """Load LLM configuration from .env.agent.secret
+    
+    Supports two formats:
+    1. Standard (task-3): LLM_API_KEY, LLM_API_BASE, LLM_MODEL
+    2. Gemini shorthand: GEMINI_API_KEY, GEMINI_MODEL
+    """
     env_file = Path(__file__).parent / ".env.agent.secret"
 
     if not env_file.exists():
@@ -35,15 +40,18 @@ def load_config():
 
     load_dotenv(env_file)
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    model = os.getenv("GEMINI_MODEL")
+    # Try standard format first (task-3 requirement)
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
+    api_base = os.getenv("LLM_API_BASE") or "https://generativelanguage.googleapis.com/v1beta"
+    model = os.getenv("LLM_MODEL") or os.getenv("GEMINI_MODEL")
 
     if not all([api_key, model]):
-        print("ERROR: Missing LLM configuration in .env.agent.secret", file=sys.stderr)
+        print("ERROR: Missing LLM configuration. Set LLM_API_KEY/LLM_MODEL or GEMINI_API_KEY/GEMINI_MODEL", file=sys.stderr)
         sys.exit(1)
 
     return {
         "api_key": api_key,
+        "api_base": api_base,
         "model": model,
     }
 
@@ -58,7 +66,7 @@ def validate_path(path: str) -> bool:
         # Check if requested path is within project root
         requested.relative_to(project_root)
         return True
-    except ValueError, RuntimeError:
+    except (ValueError, RuntimeError):
         return False
 
 
@@ -239,19 +247,31 @@ def execute_tool(tool_name: str, args: dict) -> str:
 
 
 def call_llm(messages: list, config: dict, tools: list) -> dict:
-    """Call Gemini LLM with messages and tools, return parsed response."""
+    """Call LLM with messages and tools. Supports both Gemini and OpenAI-compatible APIs."""
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config['model']}:generateContent"
+    api_base = config["api_base"]
+    api_key = config["api_key"]
+    model = config["model"]
 
-    headers = {
-        "Content-Type": "application/json",
-    }
+    # Detect if this is Gemini API based on api_base
+    is_gemini = "generativelanguage.googleapis.com" in api_base
+
+    if is_gemini:
+        return call_gemini_llm(messages, api_key, model, tools)
+    else:
+        return call_openai_compatible_llm(messages, api_base, api_key, model, tools)
+
+
+def call_gemini_llm(messages: list, api_key: str, model: str, tools: list) -> dict:
+    """Call Gemini API with Gemini-format messages and tools."""
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    headers = {"Content-Type": "application/json"}
 
     # Convert OpenAI format messages to Gemini format
     gemini_messages = []
     for msg in messages:
         if msg["role"] == "system":
-            # Prepend system message to first user message
             continue
         gemini_messages.append(
             {
@@ -293,18 +313,15 @@ def call_llm(messages: list, config: dict, tools: list) -> dict:
     payload = {
         "contents": gemini_messages,
         "tools": gemini_tools if gemini_tools else None,
-        "generationConfig": {
-            "temperature": 0.7,
-        },
+        "generationConfig": {"temperature": 0.7},
     }
 
-    # Remove None values
     if not payload["tools"]:
         del payload["tools"]
 
     try:
         response = requests.post(
-            f"{url}?key={config['api_key']}", headers=headers, json=payload, timeout=60
+            f"{url}?key={api_key}", headers=headers, json=payload, timeout=60
         )
         response.raise_for_status()
         data = response.json()
@@ -317,7 +334,6 @@ def call_llm(messages: list, config: dict, tools: list) -> dict:
         content = candidate.get("content", {})
         parts = content.get("parts", [])
 
-        # Extract text and tool calls
         text_content = ""
         tool_calls = []
 
@@ -351,7 +367,58 @@ def call_llm(messages: list, config: dict, tools: list) -> dict:
         print("ERROR: LLM request timed out (60s)", file=sys.stderr)
         sys.exit(1)
     except requests.exceptions.HTTPError as e:
-        print(f"ERROR: HTTP error: {e}", file=sys.stderr)
+        print(f"ERROR: HTTP error calling Gemini: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: Failed to call Gemini LLM: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def call_openai_compatible_llm(
+    messages: list, api_base: str, api_key: str, model: str, tools: list
+) -> dict:
+    """Call OpenAI-compatible API (e.g., OpenRouter) with OpenAI-format messages and tools."""
+
+    url = f"{api_base}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto",
+        "temperature": 0.7,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+
+        if "choices" not in data or len(data["choices"]) == 0:
+            print("ERROR: Invalid OpenAI response structure", file=sys.stderr)
+            sys.exit(1)
+
+        choice = data["choices"][0]
+        message = choice.get("message", {})
+        content = (message.get("content") or "").strip()
+        tool_calls = message.get("tool_calls", [])
+        finish_reason = choice.get("finish_reason", "stop")
+
+        return {
+            "content": content,
+            "tool_calls": tool_calls,
+            "stop_reason": finish_reason,
+        }
+
+    except requests.exceptions.Timeout:
+        print("ERROR: LLM request timed out (60s)", file=sys.stderr)
+        sys.exit(1)
+    except requests.exceptions.HTTPError as e:
+        print(f"ERROR: HTTP error calling OpenAI-compatible API: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"ERROR: Failed to call LLM: {e}", file=sys.stderr)
