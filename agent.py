@@ -71,7 +71,7 @@ def validate_path(path: str) -> bool:
         # Check if requested path is within project root
         requested.relative_to(project_root)
         return True
-    except ValueError, RuntimeError:
+    except (ValueError, RuntimeError):
         return False
 
 
@@ -268,7 +268,12 @@ def call_llm(messages: list, config: dict, tools: list) -> dict:
 
 
 def call_gemini_llm(messages: list, api_key: str, model: str, tools: list) -> dict:
-    """Call Gemini API with Gemini-format messages and tools."""
+    """Call Gemini API with Gemini-format messages and tools.
+    
+    Handles conversion from OpenAI message format to Gemini API format and
+    properly structures the tools/function_declarations array according to
+    Gemini API specification.
+    """
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {"Content-Type": "application/json"}
