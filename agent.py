@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 def load_config():
     """Load LLM configuration from .env.agent.secret
-    
+
     Supports two formats:
     1. Standard (task-3): LLM_API_KEY, LLM_API_BASE, LLM_MODEL
     2. Gemini shorthand: GEMINI_API_KEY, GEMINI_MODEL
@@ -42,11 +42,16 @@ def load_config():
 
     # Try standard format first (task-3 requirement)
     api_key = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
-    api_base = os.getenv("LLM_API_BASE") or "https://generativelanguage.googleapis.com/v1beta"
+    api_base = (
+        os.getenv("LLM_API_BASE") or "https://generativelanguage.googleapis.com/v1beta"
+    )
     model = os.getenv("LLM_MODEL") or os.getenv("GEMINI_MODEL")
 
     if not all([api_key, model]):
-        print("ERROR: Missing LLM configuration. Set LLM_API_KEY/LLM_MODEL or GEMINI_API_KEY/GEMINI_MODEL", file=sys.stderr)
+        print(
+            "ERROR: Missing LLM configuration. Set LLM_API_KEY/LLM_MODEL or GEMINI_API_KEY/GEMINI_MODEL",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     return {
