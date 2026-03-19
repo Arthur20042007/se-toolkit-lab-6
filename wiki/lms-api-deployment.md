@@ -200,8 +200,9 @@ You need to run the ETL pipeline to populate it with data from the [`Autochecker
 
    > <h3>Troubleshooting</h3>
    >
-   > If the dashboard shows no data or errors, make sure:
+   > If the dashboard shows no data or errors, make sure that:
    >
    > - The ETL sync completed successfully ([Populate the database](#populate-the-database-local)).
-   > - You entered the correct API key in the frontend.
-   > - Try selecting a different lab in the dropdown (e.g., `lab-04`).
+   > - You entered the correct LMS API key in the frontend.
+   > - At least one lab works:
+   >    1. Select a different lab in the dropdown (e.g., `lab-04`).
