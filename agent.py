@@ -71,7 +71,7 @@ def validate_path(path: str) -> bool:
         # Check if requested path is within project root
         requested.relative_to(project_root)
         return True
-    except (ValueError, RuntimeError):
+    except ValueError, RuntimeError:
         return False
 
 
@@ -273,66 +273,88 @@ def call_gemini_llm(messages: list, api_key: str, model: str, tools: list) -> di
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {"Content-Type": "application/json"}
 
-    # Convert OpenAI format messages to Gemini format
-    gemini_messages = []
+    # Extract system prompt and user messages separately
+    system_prompt = None
+    user_messages = []
+    
     for msg in messages:
         if msg["role"] == "system":
-            continue
-        gemini_messages.append(
-            {
-                "role": "user" if msg["role"] == "user" else "model",
-                "parts": [{"text": msg["content"]}],
+            system_prompt = msg["content"]
+        else:
+            user_messages.append(msg)
+
+    # Build Gemini contents array
+    gemini_contents = []
+    for msg in user_messages:
+        role = "model" if msg["role"] == "assistant" else "user"
+        gemini_contents.append({
+            "role": role,
+            "parts": [{"text": msg["content"]}]
+        })
+
+    # If no contents, add system prompt as user message
+    if not gemini_contents and system_prompt:
+        gemini_contents.append({
+            "role": "user",
+            "parts": [{"text": system_prompt}]
+        })
+    elif gemini_contents and system_prompt:
+        # Prepend system prompt to first user message
+        first_msg = gemini_contents[0]
+        if first_msg["role"] == "user":
+            first_msg["parts"][0]["text"] = system_prompt + "\n\n" + first_msg["parts"][0]["text"]
+
+    # Build tools array in proper Gemini format
+    gemini_tools = None
+    if tools:
+        function_declarations = []
+        for tool in tools:
+            if tool.get("type") == "function":
+                func = tool["function"]
+                function_declarations.append({
+                    "name": func["name"],
+                    "description": func["description"],
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": func["parameters"]["properties"],
+                        "required": func["parameters"].get("required", []),
+                    },
+                })
+        
+        if function_declarations:
+            gemini_tools = {
+                "function_declarations": function_declarations
             }
-        )
 
-    # Add system prompt as first user message if exists
-    system_prompt = next(
-        (m["content"] for m in messages if m["role"] == "system"), None
-    )
-    if system_prompt and gemini_messages:
-        gemini_messages[0]["parts"][0]["text"] = (
-            system_prompt + "\n\n" + gemini_messages[0]["parts"][0]["text"]
-        )
-
-    # Convert tools to Gemini format
-    gemini_tools = []
-    for tool in tools:
-        if tool["type"] == "function":
-            func = tool["function"]
-            gemini_tools.append(
-                {
-                    "function_declarations": [
-                        {
-                            "name": func["name"],
-                            "description": func["description"],
-                            "parameters": {
-                                "type": "OBJECT",
-                                "properties": func["parameters"]["properties"],
-                                "required": func["parameters"].get("required", []),
-                            },
-                        }
-                    ]
-                }
-            )
-
+    # Build payload
     payload = {
-        "contents": gemini_messages,
-        "tools": gemini_tools if gemini_tools else None,
-        "generationConfig": {"temperature": 0.7},
+        "contents": gemini_contents,
+        "generationConfig": {
+            "temperature": 0.7,
+        }
     }
-
-    if not payload["tools"]:
-        del payload["tools"]
+    
+    if gemini_tools:
+        payload["tools"] = [gemini_tools]
 
     try:
+        print(f"[DEBUG] Gemini API request to {model}", file=sys.stderr)
         response = requests.post(
-            f"{url}?key={api_key}", headers=headers, json=payload, timeout=60
+            f"{url}?key={api_key}", 
+            headers=headers, 
+            json=payload, 
+            timeout=60
         )
+        
+        if response.status_code != 200:
+            error_text = response.text[:500]
+            print(f"[DEBUG] Gemini error response: {error_text}", file=sys.stderr)
+        
         response.raise_for_status()
         data = response.json()
 
         if "candidates" not in data or len(data["candidates"]) == 0:
-            print("ERROR: Invalid Gemini response structure", file=sys.stderr)
+            print("ERROR: Invalid Gemini response structure (no candidates)", file=sys.stderr)
             sys.exit(1)
 
         candidate = data["candidates"][0]
@@ -347,14 +369,12 @@ def call_gemini_llm(messages: list, api_key: str, model: str, tools: list) -> di
                 text_content = part["text"]
             elif "functionCall" in part:
                 func_call = part["functionCall"]
-                tool_calls.append(
-                    {
-                        "function": {
-                            "name": func_call["name"],
-                            "arguments": json.dumps(func_call.get("args", {})),
-                        }
+                tool_calls.append({
+                    "function": {
+                        "name": func_call["name"],
+                        "arguments": json.dumps(func_call.get("args", {})),
                     }
-                )
+                })
 
         finish_reason = candidate.get("finishReason", "STOP")
 
