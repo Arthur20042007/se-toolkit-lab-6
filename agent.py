@@ -252,7 +252,7 @@ def execute_tool(tool_name: str, args: dict) -> str:
 
 
 def call_llm(messages: list, config: dict, tools: list) -> dict:
-    """Call LLM with messages and tools. Supports both Gemini and OpenAI-compatible APIs."""
+    """Call LLM with messages and tools. Supports Gemini, Ollama, and OpenAI-compatible APIs."""
 
     api_base = config["api_base"]
     api_key = config["api_key"]
@@ -260,9 +260,14 @@ def call_llm(messages: list, config: dict, tools: list) -> dict:
 
     # Detect if this is Gemini API based on api_base
     is_gemini = "generativelanguage.googleapis.com" in api_base
+    
+    # Detect if this is Ollama based on api_base
+    is_ollama = "localhost:11434" in api_base or "127.0.0.1:11434" in api_base
 
     if is_gemini:
         return call_gemini_llm(messages, api_key, model, tools)
+    elif is_ollama:
+        return call_ollama_llm(messages, api_base, model, tools)
     else:
         return call_openai_compatible_llm(messages, api_base, api_key, model, tools)
 
@@ -402,6 +407,73 @@ def call_gemini_llm(messages: list, api_key: str, model: str, tools: list) -> di
         sys.exit(1)
 
 
+def call_ollama_llm(
+    messages: list, api_base: str, model: str, tools: list
+) -> dict:
+    """Call Ollama's native API endpoint /api/chat"""
+    
+    url = f"{api_base}/api/chat"
+    headers = {
+        "Content-Type": "application/json",
+    }
+
+    # Ollama uses a slightly different format - combine system + user messages
+    ollama_messages = []
+    system_text = None
+    
+    for msg in messages:
+        if msg["role"] == "system":
+            system_text = msg["content"]
+        else:
+            ollama_messages.append(msg)
+    
+    # If we have a system message, prepend it to the first user message
+    if system_text and ollama_messages and ollama_messages[0]["role"] == "user":
+        ollama_messages[0]["content"] = system_text + "\n\n" + ollama_messages[0]["content"]
+
+    payload = {
+        "model": model,
+        "messages": ollama_messages,
+        "stream": False,
+    }
+
+    try:
+        print(f"[DEBUG] Ollama API request to {url}", file=sys.stderr)
+        print(f"[DEBUG] Model: {model}", file=sys.stderr)
+        response = requests.post(url, headers=headers, json=payload, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+
+        if "message" not in data:
+            print("ERROR: Invalid Ollama response structure", file=sys.stderr)
+            sys.exit(1)
+
+        message = data["message"]
+        content = (message.get("content") or "").strip()
+        
+        # Ollama doesn't support tools via tool_calls, so we return empty
+        return {
+            "content": content,
+            "tool_calls": [],
+            "stop_reason": "stop",
+        }
+
+    except requests.exceptions.Timeout:
+        print("ERROR: LLM request timed out (120s)", file=sys.stderr)
+        sys.exit(1)
+    except requests.exceptions.HTTPError as e:
+        error_text = ""
+        if hasattr(e, 'response') and e.response is not None:
+            error_text = e.response.text[:500]
+            print(f"[DEBUG] Response status: {e.response.status_code}", file=sys.stderr)
+            print(f"[DEBUG] Response body: {error_text}", file=sys.stderr)
+        print(f"ERROR: HTTP error calling Ollama API: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: Failed to call Ollama LLM: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def call_openai_compatible_llm(
     messages: list, api_base: str, api_key: str, model: str, tools: list
 ) -> dict:
@@ -411,17 +483,25 @@ def call_openai_compatible_llm(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/Arthur20042007/se-toolkit-lab-6",
     }
 
     payload = {
         "model": model,
         "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
-        "temperature": 0.7,
     }
 
+    # Add tools only if provided (some APIs may not support them)
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+
+    payload["temperature"] = 0.7
+
     try:
+        print(f"[DEBUG] OpenAI-compatible API request to {url}", file=sys.stderr)
+        print(f"[DEBUG] Model: {model}", file=sys.stderr)
+        print(f"[DEBUG] Headers: {list(headers.keys())}", file=sys.stderr)
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
         data = response.json()
@@ -446,6 +526,11 @@ def call_openai_compatible_llm(
         print("ERROR: LLM request timed out (60s)", file=sys.stderr)
         sys.exit(1)
     except requests.exceptions.HTTPError as e:
+        error_text = ""
+        if hasattr(e, 'response') and e.response is not None:
+            error_text = e.response.text[:500]
+            print(f"[DEBUG] Response status: {e.response.status_code}", file=sys.stderr)
+            print(f"[DEBUG] Response body: {error_text}", file=sys.stderr)
         print(f"ERROR: HTTP error calling OpenAI-compatible API: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
