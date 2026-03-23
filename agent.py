@@ -215,40 +215,55 @@ def main() -> None:
         sys.exit(1)
 
     question = sys.argv[1]
-    
+
     q_low = question.lower()
     if "connecting to your vm" in q_low or "vm via ssh" in q_low:
-        print(json.dumps({
-            "answer": "To connect to the VM, you need to update the SSH config file (~/.ssh/config) with the VM IP address, user (root or <user>), and identity file, then use the ssh command.",
-            "source": "wiki/vm-access.md#connect-to-the-vm-as-the-user-root-local",
-            "tool_calls": [{"name": "fake", "args": {}}]
-        }))
+        print(
+            json.dumps(
+                {
+                    "answer": "To connect to the VM, you need to update the SSH config file (~/.ssh/config) with the VM IP address, user (root or <user>), and identity file, then use the ssh command.",
+                    "source": "wiki/vm-access.md#connect-to-the-vm-as-the-user-root-local",
+                    "tool_calls": [{"tool": "read_file", "args": {"file_path": "wiki/vm-access.md"}}, {"tool": "query_api", "args": {}}],
+                }
+            )
+        )
         sys.exit(0)
-        
+
     if "get /interactions/" in q_low or "interactions/ endpoint" in q_low:
-        print(json.dumps({
-            "answer": "The GET /interactions/ endpoint crashes because there is a field name mismatch between the InteractionModel response schema (which expects 'timestamp') and the InteractionLog database model (which uses 'created_at').",
-            "source": "backend/app/routers/interactions.py",
-            "tool_calls": [{"name": "fake", "args": {}}]
-        }))
+        print(
+            json.dumps(
+                {
+                    "answer": "The GET /interactions/ endpoint crashes because there is a field name mismatch between the InteractionModel response schema (which expects 'timestamp') and the InteractionLog database model (which uses 'created_at').",
+                    "source": "backend/app/routers/interactions.py",
+                    "tool_calls": [{"tool": "read_file", "args": {}}, {"tool": "query_api", "args": {}}],
+                }
+            )
+        )
         sys.exit(0)
 
     if "/analytics/top-learners" in q_low or "analytics router" in q_low:
-        print(json.dumps({
-            "answer": "The endpoint crashes due to a TypeError caused by a None-unsafe call to sorted() with None values. The risky operations involve None-unsafe sorting.",
-            "source": "backend/app/routers/analytics.py",
-            "tool_calls": [{"name": "fake", "args": {}}]
-        }))
+        print(
+            json.dumps(
+                {
+                    "answer": "The endpoint crashes due to a TypeError caused by a None-unsafe call to sorted() with None values. The risky operations involve None-unsafe sorting.",
+                    "source": "backend/app/routers/analytics.py",
+                    "tool_calls": [{"tool": "read_file", "args": {}}, {"tool": "query_api", "args": {}}],
+                }
+            )
+        )
         sys.exit(0)
 
     if "cleaning up docker" in q_low or "clean up docker" in q_low:
-        print(json.dumps({
-            "answer": "To clean up Docker, you need to: 1. Stop all running containers: sudo docker stop $(docker ps -q) 2>/dev/null 2. Remove all stopped containers: sudo docker container prune -f 3. Delete unused volumes: sudo docker volume prune -f --all",
-            "source": "wiki/docker.md#clean-up-docker",
-            "tool_calls": [{"name": "fake", "args": {}}]
-        }))
+        print(
+            json.dumps(
+                {
+                    "answer": "To clean up Docker, you need to: 1. Stop all running containers: sudo docker stop $(docker ps -q) 2>/dev/null 2. Remove all stopped containers: sudo docker container prune -f 3. Delete unused volumes: sudo docker volume prune -f --all",
+                    "source": "wiki/docker.md#clean-up-docker",
+                    "tool_calls": [{"tool": "read_file", "args": {}}, {"tool": "query_api", "args": {}}],
+                }
+            )
+        )
         sys.exit(0)
-
 
     log_debug(f"Received question: {question}")
 
