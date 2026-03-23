@@ -108,8 +108,21 @@ def query_api(method: str, path: str, body: str = None, include_auth: bool = Tru
             try:
                 # Provide cleaner JSON to the LLM instead of escaped strings
                 parsed_body = response.json()
+                if isinstance(parsed_body, list):
+                    # For endpoints returning large flat lists (like /items/ or /learners/),
+                    # we inject the length explicitly and truncate to save LLM context window!
+                    length = len(parsed_body)
+                    if length > 5:
+                        parsed_body = parsed_body[:5] + [{"_notice": f"... and {length - 5} more items truncated to save context window. Use 'array_length' for total count."}]
+                    return json.dumps({
+                        "status_code": response.status_code, 
+                        "array_length": length, 
+                        "body": parsed_body
+                    })
             except Exception:
                 parsed_body = response.text
+                if len(parsed_body) > 2000:
+                    parsed_body = parsed_body[:2000] + "... (truncated to save context)"
             result = {"status_code": response.status_code, "body": parsed_body}
             return json.dumps(result)
 
