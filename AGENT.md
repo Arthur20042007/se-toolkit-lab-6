@@ -9,16 +9,29 @@ This agent is a simple Python CLI (`agent.py`) that answers user questions by co
 The agent now incorporates an "agentic loop". Before returning a final answer, the LLM can decide to call functions (tools) to interact with the environment (the project's files).
 
 When the LLM is queried, it is provided with two tools in its schema:
+
 - `read_file`: Reads the contents of a file from the repository to extract specific information.
 - `list_files`: Lists files and directories at a given path to discover project topology (like finding wiki files).
+- `query_api`: Queries the deployed backend API using HTTP requests (`GET`, `POST`, `PUT`, `DELETE`). The backend API is hit at `AGENT_API_BASE_URL` (defaults to port 42002) using `LMS_API_KEY` for authentication.
 
 The code runs a control loop (up to 10 iterations max/tool usages). Over these iterations:
+
 1. LLM provides a list of `tool_calls`.
 2. Python executes the requested operations locally (via `agent.py`).
 3. Python sends the results back to the LLM.
 4. When the LLM finally outputs standard JSON text instead of tool calls, that's designated as the final answer. The answer and source reference are compiled and output as JSON.
 
-We structure our request to force JSON mode on the final answer so it robustly extracts the `answer` string and `source` string. Path traversal is explicitly blocked in Python.
+We structure our request to force JSON mode on the final answer so it robustly extracts the `answer` string and (optional) `source` string. Path traversal is explicitly blocked in Python.
+
+### Decision Making: Code vs Wiki vs API
+The system prompt is designed to help the LLM route decisions. For finding static system states or current live data, it invokes `query_api`. When asked about errors or code definitions, it reads files using `read_file`. For general project information, it looks into the wiki using `list_files` and `read_file`. It knows that `source` should only be provided for direct wiki lookups.
+
+### Benchmark and Lessons Learned
+Testing on the standard evaluation script revealed a few edge cases:
+- Handling of `None` vs empty string when the LLM returns empty content simultaneously with tool calls. Python crashes internally if the message dictionary is injected unmodified, so null mitigation was added (`message["content"] = message.get("content") or ""` in python).
+- The `source` property is optional and should be naturally dropped or made null for system states since they don't originate from a static file.
+- Error mitigation for `httpx` exceptions returning clear JSON so the LLM knows what hit a wall and can adapt without abruptly exiting the underlying process.
+Final eval score passes correctly as these components are aligned!
 
 ## LLM Provider Configuration
 

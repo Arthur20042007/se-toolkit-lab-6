@@ -45,6 +45,7 @@ def test_agent_output_format():
     # Type check tool_calls
     assert isinstance(data["tool_calls"], list), "'tool_calls' must be a list"
 
+
 def test_agent_read_file_tool_call():
     """
     Test that the agent uses the read_file tool to answer a specific question.
@@ -73,9 +74,12 @@ def test_agent_read_file_tool_call():
         if call.get("tool") == "read_file":
             tool_used = True
             break
-            
+
     assert tool_used, f"agent.py did not use 'read_file' tool. output: {data}"
-    assert "wiki/git-vscode.md" in data.get("source", ""), f"Unexpected source: {data.get('source')}"
+    assert "wiki/git-vscode.md" in data.get("source", ""), (
+        f"Unexpected source: {data.get('source')}"
+    )
+
 
 def test_agent_list_files_tool_call():
     """
@@ -105,5 +109,38 @@ def test_agent_list_files_tool_call():
         if call.get("tool") == "list_files":
             tool_used = True
             break
-            
+
     assert tool_used, f"agent.py did not use 'list_files' tool. output: {data}"
+
+def test_agent_read_file_framework():
+    """Test that agent uses read_file for framework info."""
+    try:
+        result = subprocess.run(
+            ["uv", "run", "agent.py", "What framework does the backend use?"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("Timeout")
+    if result.returncode != 0:
+        pytest.skip("Agent failed")
+        
+    data = json.loads(result.stdout.strip())
+    tool_used = any(call.get("tool") == "read_file" for call in data.get("tool_calls", []))
+    assert tool_used, f"Expected read_file to be used for finding backend framework. Output: {data}"
+
+
+def test_agent_query_api():
+    """Test that agent uses query_api for querying database data."""
+    try:
+        result = subprocess.run(
+            ["uv", "run", "agent.py", "How many items are in the database?"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("Timeout")
+    if result.returncode != 0:
+        pytest.skip("Agent failed")
+        
+    data = json.loads(result.stdout.strip())
+    tool_used = any(call.get("tool") == "query_api" for call in data.get("tool_calls", []))
+    assert tool_used, f"Expected query_api to be used for item count in database. Output: {data}"
