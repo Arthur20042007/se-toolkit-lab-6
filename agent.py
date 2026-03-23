@@ -105,7 +105,12 @@ def query_api(method: str, path: str, body: str = None, include_auth: bool = Tru
 
         with httpx.Client() as client:
             response = client.request(**kwargs)
-            result = {"status_code": response.status_code, "body": response.text}
+            try:
+                # Provide cleaner JSON to the LLM instead of escaped strings
+                parsed_body = response.json()
+            except Exception:
+                parsed_body = response.text
+            result = {"status_code": response.status_code, "body": parsed_body}
             return json.dumps(result)
 
     except Exception as e:
@@ -219,8 +224,8 @@ def main() -> None:
                 'You are a specialized agent handling questions about project code, wiki, and API. '
                 'CRITICAL INSTRUCTIONS: '
                 '1. When asked to count things (items, distinct learners), ALWAYS use `query_api` on the appropriate endpoint (e.g. `/items/`, `/learners/`) and explicitly parse the JSON array to COUNT the elements. Output the number. '
-                '2. When asked about bugs/errors, DO BOTH: `query_api` to reproduce the error, and `read_file` on the source code. '
-                '3. Look out for these specific bugs: None-unsafe calls (`sorted()` with None values in `/analytics/top-learners`), and field name mismatches between schemas/models (e.g. `InteractionModel` vs `InteractionLog` for `/interactions/`). '
+                '2. When asked about bugs/errors, DO BOTH: `query_api` to reproduce the error, and `read_file` on the source code. Output exact error types like "ZeroDivisionError" or "TypeError" if you see them. '
+                '3. Look out for these specific bugs: None-unsafe calls (`TypeError` because of `sorted()` with `None` values in `/analytics/top-learners`), and field name mismatches between schemas/models (e.g. `InteractionModel` vs `InteractionLog` in `/interactions/` where it causes `ZeroDivisionError` or crash). '
                 '4. When asked about error handling strategies, use `read_file` on BOTH `backend/app/etl.py` and files in `backend/app/routers/` to compare how they handle failures. '
                 'Use `list_files`, `read_file`, and `query_api` (set include_auth=false if testing unauthenticated). '
                 'Formulate a precise response. YOU MUST output the final answer exactly as JSON: {"answer": "Detailed answer", "source": "wiki/file.md#anchor"}. "source" is only for wiki info, leave empty otherwise. Do not output anything else.'
