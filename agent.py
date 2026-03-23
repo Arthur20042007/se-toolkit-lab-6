@@ -43,47 +43,50 @@ TOOLS = [
     },
 ]
 
+
 def list_files(path: str) -> str:
     """Lists files and directories at a given path from project root."""
     try:
         base_dir = os.path.abspath(os.getcwd())
         target_dir = os.path.abspath(os.path.join(base_dir, path))
-        
+
         # Security check: ensure target_dir is within base_dir
         if not target_dir.startswith(base_dir):
             return "Error: Access to path outside project directory is forbidden."
-            
+
         if not os.path.exists(target_dir):
             return f"Error: Path '{path}' does not exist."
-            
+
         if not os.path.isdir(target_dir):
             return f"Error: Path '{path}' is not a directory."
-            
+
         files = os.listdir(target_dir)
         return "\n".join(files) if files else "Directory is empty."
     except Exception as e:
         return f"Error listing directory: {str(e)}"
+
 
 def read_file(path: str) -> str:
     """Read a file from the project repository."""
     try:
         base_dir = os.path.abspath(os.getcwd())
         target_file = os.path.abspath(os.path.join(base_dir, path))
-        
+
         # Security check: ensure target_file is within base_dir
         if not target_file.startswith(base_dir):
             return "Error: Access to path outside project directory is forbidden."
-            
+
         if not os.path.exists(target_file):
             return f"Error: File '{path}' does not exist."
-            
+
         if not os.path.isfile(target_file):
             return f"Error: Path '{path}' is not a file."
-            
-        with open(target_file, 'r', encoding='utf-8') as f:
+
+        with open(target_file, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         return f"Error reading file: {str(e)}"
+
 
 def log_debug(message: str) -> None:
     """Prints debug messages to stderr."""
@@ -139,7 +142,7 @@ def main() -> None:
     messages: List[Dict[str, Any]] = [
         {
             "role": "system",
-            "content": "You are a specialized documentation agent. Use `list_files` to discover wiki files and `read_file` to find the exact answer to the user's question. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {\"answer\": \"Your final answer here\", \"source\": \"wiki/path-to-file.md#optional-anchor\"}. Always provide the source reference. Do not output anything other than the final JSON object.",
+            "content": 'You are a specialized documentation agent. Use `list_files` to discover wiki files and `read_file` to find the exact answer to the user\'s question. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {"answer": "Your final answer here", "source": "wiki/path-to-file.md#optional-anchor"}. Always provide the source reference. Do not output anything other than the final JSON object.',
         },
         {"role": "user", "content": question},
     ]
@@ -153,28 +156,30 @@ def main() -> None:
                     "model": model,
                     "messages": messages,
                     "tools": TOOLS,
-                    "response_format": {"type": "json_object"}
+                    "response_format": {"type": "json_object"},
                 }
-                
+
                 response = client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 data = response.json()
-                
+
                 message = data["choices"][0]["message"]
-                
+
                 if message.get("tool_calls"):
                     # Process tool calls
                     messages.append(message)
-                    
+
                     for tool_call in message["tool_calls"]:
                         function_name = tool_call["function"]["name"]
                         try:
                             arguments = json.loads(tool_call["function"]["arguments"])
                         except json.JSONDecodeError:
                             arguments = {}
-                            
-                        log_debug(f"Calling tool: {function_name} with args: {arguments}")
-                        
+
+                        log_debug(
+                            f"Calling tool: {function_name} with args: {arguments}"
+                        )
+
                         tool_result = ""
                         if function_name == "list_files":
                             tool_result = list_files(arguments.get("path", ""))
@@ -182,20 +187,24 @@ def main() -> None:
                             tool_result = read_file(arguments.get("path", ""))
                         else:
                             tool_result = f"Error: Unknown tool {function_name}"
-                            
+
                         # Record tool call for final output
-                        all_tool_calls_record.append({
-                            "tool": function_name,
-                            "args": arguments,
-                            "result": tool_result
-                        })
-                        
+                        all_tool_calls_record.append(
+                            {
+                                "tool": function_name,
+                                "args": arguments,
+                                "result": tool_result,
+                            }
+                        )
+
                         # Add tool response to messages
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": str(tool_result)
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call["id"],
+                                "content": str(tool_result),
+                            }
+                        )
                 else:
                     # No tool calls, we have the final answer. Parse the JSON.
                     content = message.get("content", "")
@@ -206,21 +215,21 @@ def main() -> None:
                     except json.JSONDecodeError:
                         answer = content
                         source = "unknown"
-                        
+
                     output = {
                         "answer": answer.strip(),
                         "source": source,
-                        "tool_calls": all_tool_calls_record
+                        "tool_calls": all_tool_calls_record,
                     }
                     log_debug("Successfully received final answer from LLM.")
                     print(json.dumps(output))
                     sys.exit(0)
-                    
+
             # If hit max iterations
             output = {
                 "answer": "Reached maximum tool calls limit.",
                 "source": "unknown",
-                "tool_calls": all_tool_calls_record
+                "tool_calls": all_tool_calls_record,
             }
             print(json.dumps(output))
             sys.exit(0)

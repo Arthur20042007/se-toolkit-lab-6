@@ -45,6 +45,7 @@ def test_agent_output_format():
     # Type check tool_calls
     assert isinstance(data["tool_calls"], list), "'tool_calls' must be a list"
 
+
 def test_agent_read_file_tool_call():
     """
     Test that the agent uses the read_file tool to answer a specific question.
@@ -73,9 +74,12 @@ def test_agent_read_file_tool_call():
         if call.get("tool") == "read_file":
             tool_used = True
             break
-            
+
     assert tool_used, f"agent.py did not use 'read_file' tool. output: {data}"
-    assert "wiki/git-vscode.md" in data.get("source", ""), f"Unexpected source: {data.get('source')}"
+    assert "wiki/git-vscode.md" in data.get("source", ""), (
+        f"Unexpected source: {data.get('source')}"
+    )
+
 
 def test_agent_list_files_tool_call():
     """
@@ -105,5 +109,5 @@ def test_agent_list_files_tool_call():
         if call.get("tool") == "list_files":
             tool_used = True
             break
-            
+
     assert tool_used, f"agent.py did not use 'list_files' tool. output: {data}"
