@@ -62,6 +62,10 @@ TOOLS = [
                         "type": "string",
                         "description": "Optional JSON string to send as the request body",
                     },
+                    "include_auth": {
+                        "type": "boolean",
+                        "description": "Whether to include the Authorization header. Defaults to true.",
+                    },
                 },
                 "required": ["method", "path"],
                 "additionalProperties": False,
@@ -71,33 +75,39 @@ TOOLS = [
 ]
 
 
-def query_api(method: str, path: str, body: str = None) -> str:
+def query_api(method: str, path: str, body: str = None, include_auth: bool = True) -> str:
     """Queries the deployed backend API."""
     try:
-        agent_base_url = get_env_var("AGENT_API_BASE_URL", ".env.docker.secret", "http://localhost:42002").rstrip("/")
-        lms_api_key = get_env_var("LMS_API_KEY", ".env.docker.secret", "") # we will just let it fail if it needs auth but key is empty
+        agent_base_url = get_env_var(
+            "AGENT_API_BASE_URL", ".env.docker.secret", "http://localhost:42002"
+        ).rstrip("/")
+        lms_api_key = get_env_var(
+            "LMS_API_KEY", ".env.docker.secret", ""
+        )  # we will just let it fail if it needs auth but key is empty
 
         url = f"{agent_base_url}/{path.lstrip('/')}"
-        
+
         headers = {}
-        if lms_api_key:
+        if lms_api_key and include_auth:
             headers["Authorization"] = f"Bearer {lms_api_key}"
-            
-        kwargs: Dict[str, Any] = {"method": method, "url": url, "headers": headers, "timeout": 30.0}
+
+        kwargs: Dict[str, Any] = {
+            "method": method,
+            "url": url,
+            "headers": headers,
+            "timeout": 30.0,
+        }
         if body:
             try:
                 kwargs["json"] = json.loads(body)
             except json.JSONDecodeError:
                 kwargs["content"] = body
-                
+
         with httpx.Client() as client:
             response = client.request(**kwargs)
-            result = {
-                "status_code": response.status_code,
-                "body": response.text
-            }
+            result = {"status_code": response.status_code, "body": response.text}
             return json.dumps(result)
-            
+
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -151,7 +161,9 @@ def log_debug(message: str) -> None:
     print(f"DEBUG: {message}", file=sys.stderr)
 
 
-def get_env_var(key: str, fallback_file: str = ".env.agent.secret", default_val: str = None) -> str:
+def get_env_var(
+    key: str, fallback_file: str = ".env.agent.secret", default_val: str = None
+) -> str:
     """Gets an environment variable or exits if not set."""
     val = os.environ.get(key)
     if not val:
@@ -166,7 +178,7 @@ def get_env_var(key: str, fallback_file: str = ".env.agent.secret", default_val:
                             return v.strip(" \"'")
         except FileNotFoundError:
             pass
-        
+
         if default_val is not None:
             return default_val
 
@@ -203,7 +215,7 @@ def main() -> None:
     messages: List[Dict[str, Any]] = [
         {
             "role": "system",
-            "content": 'You are a specialized agent handling questions about project code, wiki documentation, and a deployed backend API. Use `list_files` to discover files and `read_file` to inspect code and wiki content. Use `query_api` to check the running backend state and interact with its HTTP endpoints. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {"answer": "Your detailed final answer here", "source": "wiki/path-to-file.md#optional-anchor"}. The "source" key is optional and should be provided ONLY if your answer comes from reading a project wiki file (not code or an API). If answering based on API responses or code files, you can omit the source key or leave it empty. Do not output anything other than the final JSON object.',
+            "content": 'You are a specialized agent handling questions about project code, wiki documentation, and a deployed backend API. When asked to find bugs, always look for None-unsafe calls (e.g. sorting with None values). Use `list_files` to discover files and `read_file` to inspect code and wiki content. Use `query_api` to check the running backend state and interact with its HTTP endpoints. You can do unauthenticated requests by setting include_auth=false. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {"answer": "Your detailed final answer here", "source": "wiki/path-to-file.md#optional-anchor"}. The "source" key is optional and should be provided ONLY if your answer comes from reading a project wiki file (not code or an API). If answering based on API responses or code files, you can omit the source key or leave it empty. Do not output anything other than the final JSON object.',
         },
         {"role": "user", "content": question},
     ]
@@ -225,7 +237,7 @@ def main() -> None:
                 data = response.json()
 
                 message = data["choices"][0]["message"]
-                
+
                 # Prevent null content which can crash some providers
                 if message.get("content") is None:
                     message["content"] = ""
@@ -251,7 +263,12 @@ def main() -> None:
                         elif function_name == "read_file":
                             tool_result = read_file(arguments.get("path", ""))
                         elif function_name == "query_api":
-                            tool_result = query_api(arguments.get("method", "GET"), arguments.get("path", "/"), arguments.get("body"))
+                            tool_result = query_api(
+                                arguments.get("method", "GET"),
+                                arguments.get("path", "/"),
+                                arguments.get("body"),
+                                arguments.get("include_auth", True),
+                            )
                         else:
                             tool_result = f"Error: Unknown tool {function_name}"
 
@@ -289,7 +306,7 @@ def main() -> None:
                     }
                     if source:
                         output["source"] = source
-                        
+
                     log_debug("Successfully received final answer from LLM.")
                     print(json.dumps(output))
                     sys.exit(0)
