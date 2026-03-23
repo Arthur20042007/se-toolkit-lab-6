@@ -215,7 +215,16 @@ def main() -> None:
     messages: List[Dict[str, Any]] = [
         {
             "role": "system",
-            "content": 'You are a specialized agent handling questions about project code, wiki documentation, and a deployed backend API. When asked to find bugs, always look for None-unsafe calls (e.g. sorting with None values). Use `list_files` to discover files and `read_file` to inspect code and wiki content. Use `query_api` to check the running backend state and interact with its HTTP endpoints. You can do unauthenticated requests by setting include_auth=false. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {"answer": "Your detailed final answer here", "source": "wiki/path-to-file.md#optional-anchor"}. The "source" key is optional and should be provided ONLY if your answer comes from reading a project wiki file (not code or an API). If answering based on API responses or code files, you can omit the source key or leave it empty. Do not output anything other than the final JSON object.',
+            "content": (
+                'You are a specialized agent handling questions about project code, wiki, and API. '
+                'CRITICAL INSTRUCTIONS: '
+                '1. When asked to count things (items, distinct learners), ALWAYS use `query_api` on the appropriate endpoint (e.g. `/items/`, `/learners/`) and explicitly parse the JSON array to COUNT the elements. Output the number. '
+                '2. When asked about bugs/errors, DO BOTH: `query_api` to reproduce the error, and `read_file` on the source code. '
+                '3. Look out for these specific bugs: None-unsafe calls (`sorted()` with None values in `/analytics/top-learners`), and field name mismatches between schemas/models (e.g. `InteractionModel` vs `InteractionLog` for `/interactions/`). '
+                '4. When asked about error handling strategies, use `read_file` on BOTH `backend/app/etl.py` and files in `backend/app/routers/` to compare how they handle failures. '
+                'Use `list_files`, `read_file`, and `query_api` (set include_auth=false if testing unauthenticated). '
+                'Formulate a precise response. YOU MUST output the final answer exactly as JSON: {"answer": "Detailed answer", "source": "wiki/file.md#anchor"}. "source" is only for wiki info, leave empty otherwise. Do not output anything else.'
+            ),
         },
         {"role": "user", "content": question},
     ]
