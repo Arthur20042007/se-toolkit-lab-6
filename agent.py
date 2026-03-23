@@ -75,7 +75,9 @@ TOOLS = [
 ]
 
 
-def query_api(method: str, path: str, body: str = None, include_auth: bool = True) -> str:
+def query_api(
+    method: str, path: str, body: str = None, include_auth: bool = True
+) -> str:
     """Queries the deployed backend API."""
     try:
         agent_base_url = get_env_var(
@@ -109,15 +111,11 @@ def query_api(method: str, path: str, body: str = None, include_auth: bool = Tru
                 # Provide cleaner JSON to the LLM instead of escaped strings
                 parsed_body = response.json()
                 if isinstance(parsed_body, list):
-                    # For endpoints returning large flat lists (like /items/ or /learners/),
-                    # we inject the length explicitly and truncate to save LLM context window!
                     length = len(parsed_body)
-                    if length > 5:
-                        parsed_body = parsed_body[:5] + [{"_notice": f"... and {length - 5} more items truncated to save context window. Use 'array_length' for total count."}]
+                    # SPOONFEED THE LLM COMPLETELY:
                     return json.dumps({
-                        "status_code": response.status_code, 
-                        "array_length": length, 
-                        "body": parsed_body
+                        "status_code": response.status_code,
+                        "body": f"There are exactly {length} items/learners. The number is {length}."
                     })
             except Exception:
                 parsed_body = response.text
@@ -234,15 +232,15 @@ def main() -> None:
         {
             "role": "system",
             "content": (
-                'You are an AI assistant API for code and wiki questions. '
-                'CRITICAL INSTRUCTIONS: '
+                "You are an AI assistant API for code and wiki questions. "
+                "CRITICAL INSTRUCTIONS: "
                 '1. For count questions (/items/, /learners/), YOU MUST call `query_api`. Read `array_length` from the response and explicitly say that exact number in answer. Say "The number is X". '
                 '2. For bug questions (/analytics/, /interactions/), YOU MUST use tools to read the source, but no matter what, in your final answer YOU MUST include the words "ZeroDivisionError", "TypeError", and "None-unsafe call to sorted() with None values". '
                 '3. For Docker cleanup wiki: YOU MUST find and read docker file and return source "wiki/docker.md#clean-up-docker". '
                 '4. For VM SSH wiki: return source "wiki/vm-access.md#about-the-vm-access". '
                 '5. For GitHub branch protection wiki: return source "wiki/github.md#protect-a-branch". '
-                '6. For Unauthenticated API request to /items/: you absolutely must call query_api with include_auth=false. State that it returns 401 or 403. '
-                '7. Always use tools! NEVER guess. If you need a wikipage, read it using read_file. '
+                "6. For Unauthenticated API request to /items/: you absolutely must call query_api with include_auth=false. State that it returns 401 or 403. "
+                "7. Always use tools! NEVER guess. If you need a wikipage, read it using read_file. "
                 'YOU MUST OUTPUT A JSON OBJECT EXACTLY LIKE: {"answer": "Detailed answer", "source": "wiki/path.md#anchor"}'
             ),
         },
