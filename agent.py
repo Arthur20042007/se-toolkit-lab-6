@@ -41,7 +41,65 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_api",
+            "description": "Call the deployed backend API.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                        "description": "HTTP method to use",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "API path, e.g. /items/",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Optional JSON string to send as the request body",
+                    },
+                },
+                "required": ["method", "path"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
+
+
+def query_api(method: str, path: str, body: str = None) -> str:
+    """Queries the deployed backend API."""
+    try:
+        agent_base_url = get_env_var("AGENT_API_BASE_URL", ".env.docker.secret", "http://localhost:42002").rstrip("/")
+        lms_api_key = get_env_var("LMS_API_KEY", ".env.docker.secret", "") # we will just let it fail if it needs auth but key is empty
+
+        url = f"{agent_base_url}/{path.lstrip('/')}"
+        
+        headers = {}
+        if lms_api_key:
+            headers["Authorization"] = f"Bearer {lms_api_key}"
+            
+        kwargs: Dict[str, Any] = {"method": method, "url": url, "headers": headers, "timeout": 30.0}
+        if body:
+            try:
+                kwargs["json"] = json.loads(body)
+            except json.JSONDecodeError:
+                kwargs["content"] = body
+                
+        with httpx.Client() as client:
+            response = client.request(**kwargs)
+            result = {
+                "status_code": response.status_code,
+                "body": response.text
+            }
+            return json.dumps(result)
+            
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 def list_files(path: str) -> str:
@@ -93,24 +151,27 @@ def log_debug(message: str) -> None:
     print(f"DEBUG: {message}", file=sys.stderr)
 
 
-def get_env_var(key: str) -> str:
+def get_env_var(key: str, fallback_file: str = ".env.agent.secret", default_val: str = None) -> str:
     """Gets an environment variable or exits if not set."""
     val = os.environ.get(key)
     if not val:
-        # Try loading from .env.agent.secret manually if not in environment
+        # Try loading from fallback file manually if not in environment
         try:
-            with open(".env.agent.secret", "r") as f:
+            with open(fallback_file, "r") as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith("#"):
+                    if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
                         if k.strip() == key:
                             return v.strip(" \"'")
         except FileNotFoundError:
             pass
+        
+        if default_val is not None:
+            return default_val
 
         print(
-            f"Error: Environment variable {key} is required. Please set it in .env.agent.secret",
+            f"Error: Environment variable {key} is required. Please set it in {fallback_file}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -142,7 +203,7 @@ def main() -> None:
     messages: List[Dict[str, Any]] = [
         {
             "role": "system",
-            "content": 'You are a specialized documentation agent. Use `list_files` to discover wiki files and `read_file` to find the exact answer to the user\'s question. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {"answer": "Your final answer here", "source": "wiki/path-to-file.md#optional-anchor"}. Always provide the source reference. Do not output anything other than the final JSON object.',
+            "content": 'You are a specialized agent handling questions about project code, wiki documentation, and a deployed backend API. Use `list_files` to discover files and `read_file` to inspect code and wiki content. Use `query_api` to check the running backend state and interact with its HTTP endpoints. Formulate a helpful and precise response, and YOU MUST output the final answer structured exactly as JSON using the following format: {"answer": "Your detailed final answer here", "source": "wiki/path-to-file.md#optional-anchor"}. The "source" key is optional and should be provided ONLY if your answer comes from reading a project wiki file (not code or an API). If answering based on API responses or code files, you can omit the source key or leave it empty. Do not output anything other than the final JSON object.',
         },
         {"role": "user", "content": question},
     ]
@@ -164,6 +225,10 @@ def main() -> None:
                 data = response.json()
 
                 message = data["choices"][0]["message"]
+                
+                # Prevent null content which can crash some providers
+                if message.get("content") is None:
+                    message["content"] = ""
 
                 if message.get("tool_calls"):
                     # Process tool calls
@@ -185,6 +250,8 @@ def main() -> None:
                             tool_result = list_files(arguments.get("path", ""))
                         elif function_name == "read_file":
                             tool_result = read_file(arguments.get("path", ""))
+                        elif function_name == "query_api":
+                            tool_result = query_api(arguments.get("method", "GET"), arguments.get("path", "/"), arguments.get("body"))
                         else:
                             tool_result = f"Error: Unknown tool {function_name}"
 
@@ -214,13 +281,15 @@ def main() -> None:
                         source = final_json.get("source", "")
                     except json.JSONDecodeError:
                         answer = content
-                        source = "unknown"
+                        source = None
 
                     output = {
                         "answer": answer.strip(),
-                        "source": source,
                         "tool_calls": all_tool_calls_record,
                     }
+                    if source:
+                        output["source"] = source
+                        
                     log_debug("Successfully received final answer from LLM.")
                     print(json.dumps(output))
                     sys.exit(0)
