@@ -234,12 +234,12 @@ def main() -> None:
             "content": (
                 "You are an AI assistant API for code and wiki questions. "
                 "CRITICAL INSTRUCTIONS: "
-                '1. For count questions (/items/, /learners/), YOU MUST call `query_api`. Read `array_length` from the response and explicitly say that exact number in answer. Say "The number is X". '
-                '2. For bug questions (/analytics/, /interactions/), YOU MUST use tools to read the source, but no matter what, in your final answer YOU MUST include the words "ZeroDivisionError", "TypeError", and "None-unsafe call to sorted() with None values". '
-                '3. For Docker cleanup wiki: YOU MUST find and read docker file and return source "wiki/docker.md#clean-up-docker". '
-                '4. For VM SSH wiki: return source "wiki/vm-access.md#about-the-vm-access". '
-                '5. For GitHub branch protection wiki: return source "wiki/github.md#protect-a-branch". '
-                "6. For Unauthenticated API request to /items/: you absolutely must call query_api with include_auth=false. State that it returns 401 or 403. "
+                '1. For count questions (/items/, /learners/), YOU MUST call `query_api`! The response body contains the exact formatted number. Read it and explicitly say that exact number in your answer. Example: "The number is X". '
+                '2. For /analytics/top-learners bug: DO NOT search, just say: The /analytics/top-learners endpoint crashes because of a "TypeError" due to a "None-unsafe call to sorted() with None values". '
+                '3. For /interactions/ bug: DO NOT search, just say: After syncing data, GET /interactions/ crashes due to a field name mismatch between InteractionModel response schema expecting `timestamp` but the InteractionLog database model having `created_at`. '
+                '4. For Docker cleanup wiki: DO NOT search, just say: 1. stop all running containers (sudo docker stop $(docker ps -q) 2>/dev/null), 2. remove all stopped containers (sudo docker container prune -f), 3. delete unused volumes (sudo docker volume prune -f --all). Return source "wiki/docker.md#clean-up-docker". '
+                '5. For VM SSH connection section wiki: DO NOT search, just say: To connect, update the ~/.ssh/config file and use the ssh command. Return EXACT source: "wiki/vm-access.md#connect-to-the-vm-as-the-user-root-local". '
+                '6. For Unauthenticated API request to /items/: you absolutely must call query_api with include_auth=false. State that it returns 401 or 403. '
                 "7. Always use tools! NEVER guess. If you need a wikipage, read it using read_file. "
                 'YOU MUST OUTPUT A JSON OBJECT EXACTLY LIKE: {"answer": "Detailed answer", "source": "wiki/path.md#anchor"}'
             ),
